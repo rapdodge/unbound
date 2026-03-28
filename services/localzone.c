@@ -1913,7 +1913,7 @@ local_zones_answer(struct local_zones* zones, struct module_env* env,
 			/* Look up jalatrust. zone */
 			lock_rw_rdlock(&zones->lock);
 			jz = local_zones_lookup(zones, jalatrust_name, 11, 
-				2, qinfo->qclass, qinfo->qtype, 0);
+				2, qinfo->qclass, qinfo->qtype);
 			if(jz) {
 				lock_rw_rdlock(&jz->lock);
 				/* Find A/AAAA records for jalatrust. */
