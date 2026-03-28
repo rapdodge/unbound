@@ -85,6 +85,7 @@
 #include "services/view.h"
 #include "services/modstack.h"
 #include "services/authzone.h"
+#include "services/jalatrust.h"
 #include "util/module.h"
 #include "util/random.h"
 #include "util/tube.h"
@@ -753,6 +754,15 @@ daemon_fork(struct daemon* daemon)
 		fatal_exit("Could not create local zones: out of memory");
 	if(!local_zones_apply_cfg(daemon->local_zones, daemon->cfg))
 		fatal_exit("Could not set up local zones");
+	daemon->jalatrust = jalatrust_create(daemon->cfg->jalatrust_db, daemon->cfg);
+	if(daemon->cfg->jalatrust_db && !daemon->jalatrust) {
+		log_err("failed to load Jalatrust database: %s", daemon->cfg->jalatrust_db);
+		/* Continue without blacklist or fail based on requirements */
+	}
+	/* Connect to local_zones */
+	if(daemon->local_zones) {
+		daemon->local_zones->jalatrust = daemon->jalatrust;
+	}
 	if(!(daemon->env->fwds = forwards_create()) ||
 		!forwards_apply_cfg(daemon->env->fwds, daemon->cfg))
 		fatal_exit("Could not set forward zones");
@@ -885,6 +895,8 @@ daemon_cleanup(struct daemon* daemon)
 	daemon->env->hints = NULL;
 	local_zones_delete(daemon->local_zones);
 	daemon->local_zones = NULL;
+	jalatrust_delete(daemon->jalatrust);
+	daemon->jalatrust = NULL;
 	respip_set_delete(daemon->env->respip_set);
 	daemon->env->respip_set = NULL;
 	views_delete(daemon->env->views);

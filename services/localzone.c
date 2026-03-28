@@ -40,6 +40,7 @@
  */
 #include "config.h"
 #include "services/localzone.h"
+#include "services/jalatrust.h"
 #include "sldns/str2wire.h"
 #include "util/regional.h"
 #include "util/config_file.h"
@@ -1891,6 +1892,125 @@ local_zones_answer(struct local_zones* zones, struct module_env* env,
 				zname, local_zone_type2str(lzt), view->name);
 		}
 		lock_rw_unlock(&view->lock);
+	}
+	/* Check Jalatrust CDB blacklist first, before local zone lookup */
+	if(zones->jalatrust && jalatrust_enabled(zones->jalatrust)) {
+		if(jalatrust_lookup(zones->jalatrust, qinfo->qname,
+			qinfo->qname_len) > 0) {
+			/* Domain is blacklisted - return A records from jalatrust. zone */
+			uint8_t jalatrust_name[12]; /* \x09jalatrust\x00 */
+			struct local_zone* jz = NULL;
+			struct local_data* jld = NULL;
+			struct local_rrset* jlr = NULL;
+			
+			verbose(VERB_QUERY, "jalatrust: blocking domain, returning jalatrust. zone records.");
+			
+			/* Build "jalatrust." in wire format */
+			jalatrust_name[0] = 9; /* length of "jalatrust" */
+			memcpy(jalatrust_name+1, "jalatrust", 9);
+			jalatrust_name[10] = 0; /* root label */
+			
+			/* Look up jalatrust. zone */
+			lock_rw_rdlock(&zones->lock);
+			jz = local_zones_lookup(zones, jalatrust_name, 11, 
+				2, qinfo->qclass, qinfo->qtype, 0);
+			if(jz) {
+				lock_rw_rdlock(&jz->lock);
+				/* Find A/AAAA records for jalatrust. */
+				{
+					struct local_data key;
+					key.node.key = &key;
+					key.name = jalatrust_name;
+					key.namelen = 11;
+					key.namelabs = 2;
+					jld = (struct local_data*)rbtree_search(&jz->data, &key.node);
+				}
+				if(jld) {
+					jlr = local_data_find_type(jld, qinfo->qtype, 0);
+				}
+				if(jlr && jlr->rrset) {
+					/* Found A records - return them with blocked domain's name */
+					struct ub_packed_rrset_key* rrset;
+					struct packed_rrset_data* src_data;
+					struct packed_rrset_data* data;
+					size_t i;
+					
+					src_data = (struct packed_rrset_data*)jlr->rrset->entry.data;
+					
+					/* Allocate rrset on temp region */
+					rrset = regional_alloc_zero(temp, sizeof(*rrset));
+					if(!rrset) {
+						lock_rw_unlock(&jz->lock);
+						lock_rw_unlock(&zones->lock);
+						return 0;
+					}
+					
+					/* Allocate data struct */
+					data = regional_alloc_zero(temp, sizeof(*data));
+					if(!data) {
+						lock_rw_unlock(&jz->lock);
+						lock_rw_unlock(&zones->lock);
+						return 0;
+					}
+					
+					/* Copy data fields */
+					data->ttl = src_data->ttl;
+					data->count = src_data->count;
+					data->trust = src_data->trust;
+					data->security = src_data->security;
+					
+					/* Allocate and copy arrays */
+					data->rr_len = regional_alloc_zero(temp, 
+						sizeof(size_t) * src_data->count);
+					data->rr_ttl = regional_alloc_zero(temp, 
+						sizeof(time_t) * src_data->count);
+					data->rr_data = regional_alloc_zero(temp, 
+						sizeof(uint8_t*) * src_data->count);
+					if(!data->rr_len || !data->rr_ttl || !data->rr_data) {
+						lock_rw_unlock(&jz->lock);
+						lock_rw_unlock(&zones->lock);
+						return 0;
+					}
+					
+					/* Copy each record */
+					for(i = 0; i < src_data->count; i++) {
+						data->rr_len[i] = src_data->rr_len[i];
+						data->rr_ttl[i] = src_data->rr_ttl[i];
+						data->rr_data[i] = regional_alloc_init(temp, 
+							src_data->rr_data[i], src_data->rr_len[i]);
+						if(!data->rr_data[i]) {
+							lock_rw_unlock(&jz->lock);
+							lock_rw_unlock(&zones->lock);
+							return 0;
+						}
+					}
+					
+					/* Setup rrset */
+					rrset->entry.data = data;
+					rrset->rk.dname = qinfo->qname;
+					rrset->rk.dname_len = qinfo->qname_len;
+					rrset->rk.type = jlr->rrset->rk.type;
+					rrset->rk.rrset_class = jlr->rrset->rk.rrset_class;
+					
+					lock_rw_unlock(&jz->lock);
+					lock_rw_unlock(&zones->lock);
+					
+					/* Encode response with all A records */
+					r = local_encode(qinfo, env, edns, repinfo, buf, temp,
+						rrset, 1, LDNS_RCODE_NOERROR);
+					return r;
+				}
+				lock_rw_unlock(&jz->lock);
+			}
+			lock_rw_unlock(&zones->lock);
+			
+			/* No jalatrust. zone or no A records - return NXDOMAIN */
+			verbose(VERB_QUERY, "jalatrust: no A records in jalatrust. zone");
+			local_error_encode(qinfo, env, edns, repinfo, buf, temp,
+				LDNS_RCODE_NXDOMAIN, (LDNS_RCODE_NXDOMAIN|BIT_AA),
+				LDNS_EDE_NONE, NULL);
+			return 1;
+		}
 	}
 	if(!z) {
 		/* try global local_zones tree */

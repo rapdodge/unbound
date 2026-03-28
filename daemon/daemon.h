@@ -62,6 +62,7 @@ struct doq_table;
 struct cookie_secrets;
 struct fast_reload_thread;
 struct fast_reload_printq;
+struct jalatrust;
 
 #include "dnstap/dnstap_config.h"
 #ifdef USE_DNSTAP
@@ -169,6 +170,8 @@ struct daemon {
 	int fast_reload_tcl_has_changes;
 	/** config file name */
 	char* cfgfile;
+	/** JALATRUST CDB blacklist handle */
+	struct jalatrust* jalatrust;
 };
 
 /**

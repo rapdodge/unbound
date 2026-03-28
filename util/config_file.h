@@ -178,6 +178,11 @@ struct config_file {
 	/** allowed udp port numbers, array with 0 if not allowed */
 	int* outgoing_avail_ports;
 
+	/** JalaTrust Specific config */
+	char* jalatrust_db;
+	/** JalaTrust action type */
+	enum localzone_type jalatrust_action;
+
 	/** EDNS buffer size to use */
 	size_t edns_buffer_size;
 	/** size of the stream wait buffers, max */

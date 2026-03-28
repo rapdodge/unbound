@@ -1657,6 +1657,35 @@ if test x_$withval = x_yes -o x_$withval != x_no; then
 
 fi
 
+# check for tinycdb (for jalatrust module)
+AC_ARG_WITH(jalatrust, AS_HELP_STRING([--with-jalatrust=path],[enable jalatrust module with tinycdb, or --without-jalatrust to disable it.]),
+    [ ],[ withval="no" ])
+found_jalatrust="no"
+if test x_$withval = x_yes -o x_$withval != x_no; then
+   AC_MSG_CHECKING(for tinycdb)
+   if test x_$withval = x_ -o x_$withval = x_yes; then
+           withval="/usr/local /opt/local /usr/lib /usr/pkg /usr/sfw /usr"
+   fi
+   for dir in $withval ; do
+           if test -f "$dir/include/cdb.h"; then
+               found_jalatrust="yes"
+               if test "$dir" != "/usr"; then
+                   CPPFLAGS="$CPPFLAGS -I$dir/include"
+                   LDFLAGS="$LDFLAGS -L$dir/lib"
+               fi
+               AC_MSG_RESULT(found in $dir)
+               AC_DEFINE([HAVE_CDB], [1], [Have tinycdb library])
+               LIBS="$LIBS -lcdb"
+               break;
+           fi
+   done
+   if test x_$found_jalatrust != x_yes; then
+       AC_MSG_WARN([tinycdb not found, jalatrust support disabled])
+   fi
+fi
+AC_CHECK_HEADERS([cdb.h])
+AC_CHECK_LIB([cdb], [cdb_init])
+
 # set static linking for uninstalled libraries if requested
 AC_SUBST(staticexe)
 staticexe=""

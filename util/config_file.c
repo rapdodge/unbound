@@ -387,6 +387,8 @@ config_create(void)
 	cfg->cookie_secret_len = 16;
 	init_cookie_secret(cfg->cookie_secret, cfg->cookie_secret_len);
 	cfg->cookie_secret_file = NULL;
+	cfg->jalatrust_db = NULL;
+	cfg->jalatrust_action = local_zone_always_null;
 #ifdef USE_CACHEDB
 	if(!(cfg->cachedb_backend = strdup("testframe"))) goto error_exit;
 	if(!(cfg->cachedb_secret = strdup("default"))) goto error_exit;
@@ -917,6 +919,21 @@ int config_set_option(struct config_file* cfg, const char* opt,
 		}
 		oi[cfg->num_out_ifs++] = d;
 		cfg->out_ifs = oi;
+	} else if(strcmp(opt, "jalatrust-db:") == 0) {
+		free(cfg->jalatrust_db);
+		cfg->jalatrust_db = strdup(val);
+		/* Disable if empty or "no" */
+		if(cfg->jalatrust_db && (strlen(cfg->jalatrust_db) == 0 ||
+			strcmp(cfg->jalatrust_db, "no") == 0)) {
+			free(cfg->jalatrust_db);
+			cfg->jalatrust_db = NULL;
+		}
+	} else if(strcmp(opt, "jalatrust-action:") == 0) {
+		enum localzone_type t;
+		if(!local_zone_str2type(val, &t)) {
+			return 0;
+		}
+		cfg->jalatrust_action = t;
 	} else {
 		/* unknown or unsupported (from the set_option interface):
 		 * interface, outgoing-interface, access-control,
@@ -1834,6 +1851,7 @@ config_delete(struct config_file* cfg)
 	config_delstrlist(cfg->ipsecmod_whitelist);
 #endif
 	free(cfg->cookie_secret_file);
+	free(cfg->jalatrust_db);
 #ifdef USE_CACHEDB
 	free(cfg->cachedb_backend);
 	free(cfg->cachedb_secret);

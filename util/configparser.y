@@ -216,6 +216,7 @@ extern struct config_parser_state* cfg_parser;
 %token VAR_COOKIE_SECRET_FILE VAR_ITER_SCRUB_NS VAR_ITER_SCRUB_CNAME
 %token VAR_MAX_GLOBAL_QUOTA VAR_HARDEN_UNVERIFIED_GLUE VAR_LOG_TIME_ISO
 %token VAR_ITER_SCRUB_PROMISCUOUS
+%token VAR_JALATRUST_DB VAR_JALATRUST_ACTION
 
 %%
 toplevelvars: /* empty */ | toplevelvars toplevelvar ;
@@ -357,7 +358,8 @@ content_server: server_num_threads | server_verbosity | server_port |
 	server_harden_unknown_additional | server_disable_edns_do |
 	server_log_destaddr | server_cookie_secret_file |
 	server_iter_scrub_ns | server_iter_scrub_cname | server_max_global_quota |
-	server_harden_unverified_glue | server_log_time_iso | server_iter_scrub_promiscuous
+	server_harden_unverified_glue | server_log_time_iso | server_iter_scrub_promiscuous |
+	server_jalatrust_db | server_jalatrust_action
 	;
 stub_clause: stubstart contents_stub
 	{
@@ -4248,6 +4250,32 @@ server_iter_scrub_promiscuous: VAR_ITER_SCRUB_PROMISCUOUS STRING_ARG
 			yyerror("expected yes or no.");
 		else cfg_parser->cfg->iter_scrub_promiscuous =
 			(strcmp($2, "yes")==0);
+		free($2);
+	}
+	;
+server_jalatrust_db: VAR_JALATRUST_DB STRING_ARG
+	{
+		OUTYY(("P(server_jalatrust_db:%s)\n", $2));
+		free(cfg_parser->cfg->jalatrust_db);
+		cfg_parser->cfg->jalatrust_db = $2;
+		/* Disable if empty or "no" */
+		if(cfg_parser->cfg->jalatrust_db &&
+			(strlen(cfg_parser->cfg->jalatrust_db) == 0 ||
+			strcmp(cfg_parser->cfg->jalatrust_db, "no") == 0)) {
+			free(cfg_parser->cfg->jalatrust_db);
+			cfg_parser->cfg->jalatrust_db = NULL;
+		}
+	}
+	;
+server_jalatrust_action: VAR_JALATRUST_ACTION STRING_ARG
+	{
+		enum localzone_type t;
+		OUTYY(("P(server_jalatrust_action:%s)\n", $2));
+		if(!local_zone_str2type($2, &t)) {
+			yyerror("unknown jalatrust action type");
+		} else {
+			cfg_parser->cfg->jalatrust_action = t;
+		}
 		free($2);
 	}
 	;

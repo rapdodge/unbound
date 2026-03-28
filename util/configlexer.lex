@@ -607,6 +607,8 @@ iter-scrub-ns{COLON}		{ YDVAR(1, VAR_ITER_SCRUB_NS) }
 iter-scrub-cname{COLON}		{ YDVAR(1, VAR_ITER_SCRUB_CNAME) }
 max-global-quota{COLON}		{ YDVAR(1, VAR_MAX_GLOBAL_QUOTA) }
 iter-scrub-promiscuous{COLON}	{ YDVAR(1, VAR_ITER_SCRUB_PROMISCUOUS) }
+jalatrust-db{COLON}			{ YDVAR(1, VAR_JALATRUST_DB) }
+jalatrust-action{COLON}			{ YDVAR(1, VAR_JALATRUST_ACTION) }
 <INITIAL,val>{NEWLINE}		{ LEXOUT(("NL\n")); cfg_parser->line++; }
 
 	/* Quoted strings. Strip leading and ending quotes */

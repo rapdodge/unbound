@@ -117,6 +117,7 @@ struct local_zones {
 	lock_rw_type lock;
 	/** rbtree of struct local_zone */
 	rbtree_type ztree;
+	struct jalatrust* jalatrust;
 };
 
 /**
