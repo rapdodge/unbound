@@ -42,6 +42,7 @@
 #ifndef UTIL_CONFIG_FILE_H
 #define UTIL_CONFIG_FILE_H
 #include "sldns/rrdef.h"
+#include "services/localzone.h"
 struct config_stub;
 struct config_auth;
 struct config_view;
