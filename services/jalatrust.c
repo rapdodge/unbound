@@ -122,6 +122,8 @@ int jalatrust_lookup(struct jalatrust* jt, uint8_t* qname, size_t qname_len)
 	int result;
 	char qname_str[LDNS_MAX_DOMAINLEN];
 	uint8_t qname_lower[LDNS_MAX_DOMAINLEN];
+	uint8_t* lookup_name;
+	size_t lookup_len;
 
 	if(!jt || !qname)
 		return 0;
@@ -137,12 +139,31 @@ int jalatrust_lookup(struct jalatrust* jt, uint8_t* qname, size_t qname_len)
 	verbose(VERB_ALGO, "jalatrust: looking up domain: %s (wire len=%zu)", qname_str, qname_len);
 
 	lock_basic_lock(&jt->lock);
-	/* Database stores domains in DNS wire format (lowercase) */
-	result = cdb_find(&jt->cdb, qname_lower, qname_len);
+
+	/* Try exact match first, then walk up parent domains.
+	 * e.g. for www.xnxx.com: try www.xnxx.com, then xnxx.com, then com.
+	 * Stop before root label "." (len==1) since we never block root. */
+	lookup_name = qname_lower;
+	lookup_len = qname_len;
+	result = 0;
+
+	while(lookup_len > 1) {
+		result = cdb_find(&jt->cdb, lookup_name, lookup_len);
+		if(result != 0) {
+			/* Found (1) or error (-1), stop walking */
+			break;
+		}
+		/* Not found, try parent domain by stripping leftmost label */
+		dname_remove_label(&lookup_name, &lookup_len);
+	}
+
 	lock_basic_unlock(&jt->lock);
 
 	if(result == 1) {
-		verbose(VERB_QUERY, "jalatrust: domain blocked: %s", qname_str);
+		char match_str[LDNS_MAX_DOMAINLEN];
+		dname_str(lookup_name, match_str);
+		verbose(VERB_QUERY, "jalatrust: domain blocked: %s (matched: %s)",
+			qname_str, match_str);
 	}
 
 	return result;
