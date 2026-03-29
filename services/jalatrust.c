@@ -49,8 +49,6 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 
 struct jalatrust* jalatrust_create(const char* filename, struct config_file* cfg)
 {
@@ -140,43 +138,6 @@ int jalatrust_lookup(struct jalatrust* jt, uint8_t* qname, size_t qname_len)
 	dname_str(qname_lower, qname_str);
 	verbose(VERB_ALGO, "jalatrust: looking up domain: %s (wire len=%zu)", qname_str, qname_len);
 
-	/* Check if the query name looks like a bare IP address.
-	 * e.g. "111.90.150.182." - this is a single label followed by root,
-	 * but actually we need to check the text form. */
-	{
-		char ip_check[LDNS_MAX_DOMAINLEN];
-		size_t ip_len;
-		struct in_addr addr4;
-		struct in6_addr addr6;
-
-		dname_str(qname_lower, ip_check);
-		/* dname_str produces "label.label." with trailing dot, remove it */
-		ip_len = strlen(ip_check);
-		if(ip_len > 0 && ip_check[ip_len-1] == '.')
-			ip_check[ip_len-1] = '\0';
-
-		/* Try parsing as IPv4 or IPv6 */
-		if(inet_pton(AF_INET, ip_check, &addr4) == 1 ||
-		   inet_pton(AF_INET6, ip_check, &addr6) == 1) {
-			/* This query name IS an IP address.
-			 * Look it up directly in the CDB as a text key. */
-			size_t key_len = strlen(ip_check);
-			verbose(VERB_ALGO, "jalatrust: query name is IP address: %s", ip_check);
-
-			lock_basic_lock(&jt->lock);
-			result = cdb_find(&jt->cdb, ip_check, (unsigned int)key_len);
-			lock_basic_unlock(&jt->lock);
-
-			if(result == 1) {
-				verbose(VERB_QUERY, "jalatrust: IP address blocked: %s",
-					ip_check);
-			}
-			if(result != 0)
-				return result;
-			/* If not found as IP, fall through to domain lookup */
-		}
-	}
-
 	lock_basic_lock(&jt->lock);
 
 	/* Try exact match first, then walk up parent domains.
@@ -203,66 +164,6 @@ int jalatrust_lookup(struct jalatrust* jt, uint8_t* qname, size_t qname_len)
 		dname_str(lookup_name, match_str);
 		verbose(VERB_QUERY, "jalatrust: domain blocked: %s (matched: %s)",
 			qname_str, match_str);
-	}
-
-	return result;
-}
-
-int jalatrust_lookup_ip(struct jalatrust* jt, struct sockaddr_storage* addr,
-	socklen_t addrlen)
-{
-	char ip_str[INET6_ADDRSTRLEN];
-	uint8_t wire[LDNS_MAX_DOMAINLEN];
-	size_t wire_len;
-	int result;
-
-	if(!jt || !addr)
-		return 0;
-
-	(void)addrlen; /* used for type-safety, not needed for conversion */
-
-	/* Convert binary IP to text string */
-	if(addr->ss_family == AF_INET) {
-		struct sockaddr_in* sa4 = (struct sockaddr_in*)addr;
-		if(!inet_ntop(AF_INET, &sa4->sin_addr, ip_str, sizeof(ip_str)))
-			return 0;
-	} else if(addr->ss_family == AF_INET6) {
-		struct sockaddr_in6* sa6 = (struct sockaddr_in6*)addr;
-		if(!inet_ntop(AF_INET6, &sa6->sin6_addr, ip_str, sizeof(ip_str)))
-			return 0;
-	} else {
-		return 0; /* unknown address family */
-	}
-
-	verbose(VERB_ALGO, "jalatrust: checking response IP: %s", ip_str);
-
-	/* Convert IP text to wire format (DNS labels).
-	 * e.g. "66.254.114.41" -> \x02 66 \x03 254 \x03 114 \x02 41 \x00
-	 * IPs are stored in wire format in the CDB, same as domains. */
-	{
-		const char* p = ip_str;
-		wire_len = 0;
-		while(*p) {
-			const char* dot = strchr(p, '.');
-			size_t tlen = dot ? (size_t)(dot - p) : strlen(p);
-			if(tlen == 0 || tlen > 63 ||
-				wire_len + 1 + tlen >= sizeof(wire))
-				return 0;
-			wire[wire_len++] = (uint8_t)tlen;
-			memcpy(wire + wire_len, p, tlen);
-			wire_len += tlen;
-			p += tlen;
-			if(*p == '.') p++;
-		}
-		wire[wire_len++] = 0; /* root label */
-	}
-
-	lock_basic_lock(&jt->lock);
-	result = cdb_find(&jt->cdb, wire, (unsigned int)wire_len);
-	lock_basic_unlock(&jt->lock);
-
-	if(result == 1) {
-		verbose(VERB_QUERY, "jalatrust: response IP blocked: %s", ip_str);
 	}
 
 	return result;
